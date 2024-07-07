@@ -228,3 +228,94 @@ if recommended_items:
         print(f"Item {item}: Score {score:.4f}")
 else:
     print(f"No recommendations for user {user_id}")
+
+
+
+
+def get_top_k_recommendations(graph, k):
+    model.eval()
+    with torch.no_grad():
+        out = model(graph.x, graph.edge_index, graph.edge_type)
+
+    user_recommendations = {}
+    num_users = len(user_to_index)
+    num_items = len(item_to_index)
+
+    all_items = torch.arange(num_users, num_users + num_items)
+
+    for user_id, user_idx in user_to_index.items():
+        item_scores = F.softmax(out[all_items], dim=1)[:, 2]  # Index 2 for purchase probability
+        sorted_items = torch.argsort(item_scores, descending=True)
+        
+        top_k_items = []
+        for idx in sorted_items[:k]:
+            item_index = idx.item() - num_users
+            item_id = index_to_item[idx.item()]
+            score = item_scores[idx].item()
+            top_k_items.append((item_id, score))
+        
+        user_recommendations[user_id] = top_k_items
+    
+    return user_recommendations
+
+
+def calculate_metrics(recommendations, actual_purchases, k):
+    recall_list = []
+    precision_list = []
+
+    for user_id in actual_purchases.keys():
+        if user_id in recommendations:
+            recommended_items = [item for item, _ in recommendations[user_id]]
+            purchased_items = actual_purchases[user_id]
+            
+            num_relevant_items = len(set(recommended_items) & set(purchased_items))
+            
+            recall = num_relevant_items / len(purchased_items) if purchased_items else 0
+            precision = num_relevant_items / k
+            
+            recall_list.append(recall)
+            precision_list.append(precision)
+    
+    avg_recall = np.mean(recall_list)
+    avg_precision = np.mean(precision_list)
+    
+    return avg_recall, avg_precision
+
+def get_actual_purchases(df):
+    user_purchases = {}
+    for user_id, group in df.groupby('userid'):
+        purchased_items = group[group['event_type'] == 'purchase']['item_id'].tolist()
+        user_purchases[user_id] = purchased_items
+    return user_purchases
+
+val_purchases = get_actual_purchases(val)
+test_purchases = get_actual_purchases(test)
+
+# Get top-k recommendations for validation and test sets
+k = 10
+val_recommendations = get_top_k_recommendations(val_graph, k)
+test_recommendations = get_top_k_recommendations(test_graph, k)
+
+# Calculate metrics
+val_recall, val_precision = calculate_metrics(val_recommendations, val_purchases, k)
+test_recall, test_precision = calculate_metrics(test_recommendations, test_purchases, k)
+
+print(f'Validation Recall@{k}: {val_recall:.4f}')
+print(f'Validation Precision@{k}: {val_precision:.4f}')
+print(f'Test Recall@{k}: {test_recall:.4f}')
+print(f'Test Precision@{k}: {test_precision:.4f}')
+
+
+def print_recommended_items(user_id, recommendations, top_k=5):
+    if user_id not in recommendations:
+        print(f"No recommendations for user {user_id}")
+        return
+    
+    recommended_items = recommendations[user_id]
+    print(f"Top {top_k} recommended items for user {user_id}:")
+    for item, score in recommended_items:
+        print(f"Item {item}: Score {score:.4f}")
+
+# Example usage
+user_id = 1014  # Example user
+print_recommended_items(user_id, test_recommendations, top_k=k)
