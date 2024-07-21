@@ -64,3 +64,24 @@ for data in train_dataset:
 print(f"\nNumber of unique remapped IDs: {len(id_counts)}")
 print(f"Most common remapped IDs: {sorted(id_counts.items(), key=lambda x: x[1], reverse=True)[:10]}")
 print(f"Least common remapped IDs: {sorted(id_counts.items(), key=lambda x: x[1])[:10]}")
+
+
+
+def remap_item_ids(dataset):
+    unique_items = set()
+    for data in dataset:
+        if isinstance(data.x, torch.Tensor):
+            unique_items.update(data.x.view(-1).tolist())
+        else:
+            unique_items.add(data.x)
+    
+    id_map = {old_id: new_id for new_id, old_id in enumerate(sorted(unique_items))}
+    reverse_id_map = {new_id: old_id for old_id, new_id in id_map.items()}
+    
+    for data in dataset:
+        if isinstance(data.x, torch.Tensor):
+            data.x = torch.tensor([[id_map[id.item()]] for id in data.x.view(-1)], dtype=torch.long)
+        else:
+            data.x = torch.tensor([[id_map[data.x]]], dtype=torch.long)
+    
+    return len(id_map), id_map, reverse_id_map
