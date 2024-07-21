@@ -43,12 +43,4 @@ try:
     print(f"New number of unique items: {num_items}")
 except Exception as e:
     print(f"An error occurred: {str(e)}")
-    print("Debugging information:")
-    print(f"Type of train_dataset: {type(train_dataset)}")
-    print(f"Length of train_dataset: {len(train_dataset)}")
-    if len(train_dataset) > 0:
-        first_item = train_dataset[0]
-        print(f"Type of first item: {type(first_item)}")
-        print(f"Type of first item's x attribute: {type(first_item.x)}")
-        print(f"Shape of first item's x attribute (if tensor): {first_item.x.shape if isinstance(first_item.x, torch.Tensor) else 'Not a tensor'}")
-        print(f"Value of first item's x attribute: {first_item.x}")
+    # ... (rest of the debugging code)
