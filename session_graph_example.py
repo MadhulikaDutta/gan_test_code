@@ -19,15 +19,15 @@ def remap_item_ids(dataset):
     for data in dataset:
         if isinstance(data.x, torch.Tensor):
             if data.x.dim() == 2:
-                data.x = torch.tensor([[id_map[id.item()]] for id in data.x], dtype=torch.long)
+                data.x = torch.tensor([[id_map[id.item()]] for id in data.x.squeeze()], dtype=torch.long)
             elif data.x.dim() == 1:
                 data.x = torch.tensor([id_map[id.item()] for id in data.x], dtype=torch.long)
             else:
-                data.x = torch.tensor([id_map[data.x.item()]], dtype=torch.long)
+                data.x = torch.tensor([[id_map[data.x.item()]]], dtype=torch.long)
         elif isinstance(data.x, list):
-            data.x = torch.tensor([id_map[id] for id in data.x], dtype=torch.long)
+            data.x = torch.tensor([[id_map[id]] for id in data.x], dtype=torch.long)
         else:
-            data.x = torch.tensor([id_map[data.x]], dtype=torch.long)
+            data.x = torch.tensor([[id_map[data.x]]], dtype=torch.long)
     
     return len(id_map), id_map, reverse_id_map
 
