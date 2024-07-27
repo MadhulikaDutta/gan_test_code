@@ -189,3 +189,49 @@ test_loader = pyg_data.DataLoader(test_dataset,
                                   drop_last=True)
 
 test(test_loader, best_model, is_validation=False, save_model_preds=True)
+
+
+def test(loader, test_model, is_validation=False, save_model_preds=False):
+    test_model.eval()
+
+    k = 5
+    correct = 0
+    top_k_correct = 0
+
+    user_predictions = []
+
+    for batch_idx, data in enumerate(tqdm(loader)):
+        data.to('cuda')
+        with torch.no_grad():
+            score = test_model(data)
+            pred = score.max(dim=1)[1]
+            label = data.y
+
+        correct += pred.eq(label).sum().item()
+
+        if not is_validation:
+            score = score.cpu().detach().numpy()
+            for row in range(pred.size(0)):
+                top_k_pred = np.argpartition(score[row], -k)[-k:]
+                if label[row].item() in top_k_pred:
+                    top_k_correct += 1
+
+                if save_model_preds:
+                    user_prediction = {
+                        'visitorid': data.visitorid[row].item(),
+                        'session': data.x[row].cpu().numpy().tolist(),
+                        'predicted_item': pred[row].item(),
+                        'actual_item': label[row].item()
+                    }
+                    for i in range(k):
+                        user_prediction[f'top_{i+1}_pred'] = top_k_pred[i]
+                    user_predictions.append(user_prediction)
+
+    if save_model_preds:
+        df = pd.DataFrame(user_predictions)
+        df.to_csv('user_predictions.csv', index=False)
+
+    if not is_validation:
+        return correct / len(loader), top_k_correct / len(loader)
+    else:
+        return correct / len(loader), 0
