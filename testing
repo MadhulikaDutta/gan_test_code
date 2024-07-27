@@ -58,3 +58,134 @@ test_loader = pyg_data.DataLoader(test_dataset,
                                  drop_last=True)
 
 test(test_loader, best_model, is_validation=False, save_model_preds=True)
+
+
+
+
+
+
+
+
+
+
+def extract_subsessions(sessions):
+    """Extracts all partial sessions from the sessions given along with visitor IDs."""
+    all_sessions = []
+    for visitorid, session in sessions:
+        for i in range(1, len(session)):
+            all_sessions.append((visitorid, session[:i + 1]))
+    return all_sessions
+train_sessions, val_sessions, test_sessions = [], [], []
+for visitor in train_visitors:
+    train_sessions.extend(extract_subsessions(sessions_by_visitors[visitor]))
+for visitor in val_visitors:
+    val_sessions.extend(extract_subsessions(sessions_by_visitors[visitor]))
+for visitor in test_visitors:
+    test_sessions.extend(extract_subsessions(sessions_by_visitors[visitor]))
+
+
+
+print(f'train, val, and test sessions: {len(train_sessions)}, {len(val_sessions)}, {len(test_sessions)}')
+class GraphDataset(pyg_data.InMemoryDataset):
+    def __init__(self, root, file_name, transform=None, pre_transform=None):
+        self.file_name = file_name
+        super().__init__(root, transform, pre_transform)
+        self.data, self.slices = torch.load(self.processed_paths[0])
+
+    @property
+    def raw_file_names(self):
+        return [f'{self.file_name}.txt']
+
+    @property
+    def processed_file_names(self):
+        return [f'{self.file_name}.pt']
+
+    def download(self):
+        pass
+
+    def process(self):
+        raw_data_file = f'{self.raw_dir}/{self.raw_file_names[0]}'
+        with open(raw_data_file, 'rb') as f:
+            sessions = pickle.load(f)
+        data_list = []
+
+        for visitorid, session in sessions:
+            session, y = session[:-1], session[-1]
+            codes, uniques = pd.factorize(session)
+            senders, receivers = codes[:-1], codes[1:]
+
+            # Build Data instance
+            edge_index = torch.tensor([senders, receivers], dtype=torch.long)
+            x = torch.tensor(uniques, dtype=torch.long).unsqueeze(1)
+            y = torch.tensor([y], dtype=torch.long)
+            data = pyg_data.Data(x=x, edge_index=edge_index, y=y)
+            data.visitorid = torch.tensor([visitorid])
+            data_list.append(data)
+
+        data, slices = self.collate(data_list)
+        torch.save((data, slices), self.processed_paths[0])
+
+
+
+def test(loader, test_model, is_validation=False, save_model_preds=False):
+    test_model.eval()
+
+    k = 5
+    correct = 0
+    top_k_correct = 0
+
+    user_predictions = []
+
+    for _, data in enumerate(tqdm(loader)):
+        data.to('cuda')
+        with torch.no_grad():
+            score = test_model(data)
+            pred = score.max(dim=1)[1]
+            label = data.y
+
+        correct += pred.eq(label).sum().item()
+
+        if not is_validation:
+            score = score.cpu().detach().numpy()
+            for row in range(pred.size(0)):
+                top_k_pred = np.argpartition(score[row], -k)[-k:]
+                if label[row].item() in top_k_pred:
+                    top_k_correct += 1
+
+                if save_model_preds:
+                    user_predictions.append({
+                        'visitorid': data.visitorid[row].item(),
+                        'session': data.x[row].cpu().numpy().tolist(),
+                        'predicted_item': pred[row].item(),
+                        'actual_item': label[row].item(),
+                        'top_k_pred': top_k_pred.tolist()
+                    })
+
+    if save_model_preds:
+        df = pd.DataFrame(user_predictions)
+        df.to_csv('user_predictions.csv', index=False)
+
+    if not is_validation:
+        return correct / len(loader), top_k_correct / len(loader)
+    else:
+        return correct / len(loader), 0
+
+
+
+test_accs, top_k_accs, losses, best_model, best_acc, test_loader = train(args)
+
+print(test_accs, top_k_accs)
+print("Maximum test set accuracy: {0}".format(max(test_accs)))
+print("Minimum loss: {0}".format(min(losses)))
+
+# Save the best model
+torch.save(best_model.state_dict(), 'model')
+
+# Run test for our best model to save the predictions!
+test_dataset = GraphDataset('./', 'test')
+test_loader = pyg_data.DataLoader(test_dataset,
+                                  batch_size=args.batch_size,
+                                  shuffle=False,
+                                  drop_last=True)
+
+test(test_loader, best_model, is_validation=False, save_model_preds=True)
